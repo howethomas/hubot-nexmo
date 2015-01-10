@@ -5,10 +5,14 @@ http = require 'http'
 express = require 'express'
 Events = require 'events'
 Emitter = Events.EventEmitter
+Redis = require "redis"
+Os = require("os")
+
 
 class Nexmo extends Adapter
   constructor: (robot) ->
     super(robot)
+    @active_numbers = []
     @ee= new Emitter
     @robot = robot
     @ee.on("MsgRx", (user_name, message_id, room_name, msg) =>
@@ -18,46 +22,40 @@ class Nexmo extends Adapter
       console.log "Received from #{user_name} to #{room_name}: #{msg}"
     )
 
-  key= process.env.NEMXO_KEY or '43291ed6'
-  secret= process.env.NEXMO_SECRET or '8bb7490a'
-  default_nexmo_params = 
-    protocol: "http:"
-    host: "rest.nexmo.com"
-    pathname: "/sms/json"
-    query:
-      api_key: key
-      api_secret: secret
+  key= process.env.NEMXO_KEY 
+  secret= process.env.NEXMO_SECRET 
 
   send_nexmo: (to, from, text) ->
-    uri = url.format default_nexmo_params
-    uri.query.to = to
-    uri.query.from = from
-    uri.query.text = text
-    
-    http.get
-      uri: uri,
-      (err, res, body) ->
-      if err
-        console.log err
-      else
-        ress = JSON.parse(body)
-        if ress.messages[0].status > 0
-          console.log ress.messages[0]["error-text"]
-        else
-          console.log {
-            id: ress.messages[0]["message-id"]
-            price: ress.messages[0]["message-price"]
-            balance: ress.messages[0]["remaining-balance"]
-          }
- 
-  set_callback: (callback_path) ->
-    callback_params = default_nexmo_params
-    callback_params.pathname = "/number/update"
-    callback_params.query.country = "US"
-    callback_params.query.msisdn = "5084707170"
-    callback_params.query.moHttpUrl = callback_path
-    uri = url.format callback_params
-    
+    nexmo_params = 
+      protocol: "http:"
+      host: "rest.nexmo.com"
+      pathname: "/sms/json"
+      query:
+        api_key: key
+        api_secret: secret
+        to: to
+        from: from
+        text: text
+    uri = url.format nexmo_params
+    http.get(uri, (res) ->
+      console.log "Got response: " + res.statusCode
+      return
+      ).on "error", (e) ->
+        console.log "Got error: " + e.message
+        return
+   
+  set_callback: (number, country, callback_path) ->
+    nexmo_params = 
+      protocol: "http:"
+      host: "rest.nexmo.com"
+      pathname: "/number/update"
+      query:
+        api_key: key
+        api_secret: secret
+        country: "US"
+        msisdn: number
+        moHttpUrl: callback_path
+    uri = url.format nexmo_params
     http.request
       method: 'POST',
       uri: uri
@@ -67,7 +65,7 @@ class Nexmo extends Adapter
     user = envelope if not user # pre-2.4.2 style
     from = user.room 
     to = user.name
-    send_nexmo(to, from, string) for string in strings
+    @send_nexmo(to, from, string) for string in strings
 
   emote: (envelope, strings...) ->
     @send envelope, "* #{str}" for str in strings
@@ -78,8 +76,7 @@ class Nexmo extends Adapter
 
   run: ->
     self = @
-    listen_port = process.env.CALLBACK_PORT or 8888
-    routable_address = process.env.CALLBACK_URL or "http://66.31.88.108:#{listen_port}"
+    routable_address = process.env.CALLBACK_URL 
     callback_path = process.env.CALLBACK_PATH or "/nexmo_callback"
     callback_url = "#{routable_address}#{callback_path}"
     app = express()
@@ -106,7 +103,15 @@ class Nexmo extends Adapter
       return
     )
 
-    @set_callback callback_url  
+    # Go through all of the active numbers, and add them.
+    redis_client = Redis.createClient()
+    redis_client.smembers("NEXMO_NUMBERS", 
+      (err, reply) ->
+        for number in reply
+          @set_callback number, "US", callback_url(number)
+          @active_numbers.push number
+      )
+    @emit "connected"
 
 exports.use = (robot) ->
   new Nexmo robot
