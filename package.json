@@ -1,6 +1,6 @@
 {
   "name": "hubot-nexmo",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "author": {
     "name": "Thomas Howe",
     "url": "github.com/howethomas"
@@ -10,7 +10,7 @@
       "name": "Thomas Howe",
       "email": "ghostofbasho@gmail.com"
     },
-     {
+    {
       "name": "Gordon DuQuesnay",
       "email": "gduquesnay@gmail.com"
     }
