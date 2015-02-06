@@ -96,7 +96,6 @@ class Nexmo extends Adapter
 
     callback_url = "#{routable_address}#{callback_path}"
     app = express()
-
     app.get callback_path, (req, res) =>
       # First, see if this user is in the system.
       # If not, then let's make a new user for this far end.
