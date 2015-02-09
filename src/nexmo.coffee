@@ -8,6 +8,7 @@ Emitter = Events.EventEmitter
 Redis = require "redis"
 Os = require("os")
 Request = require('request')
+ReadWriteLock = require('rwlock')
 
 class Nexmo extends Adapter
   constructor: (robot) ->
@@ -23,32 +24,33 @@ class Nexmo extends Adapter
     @key= process.env.NEXMO_KEY
     @secret= process.env.NEXMO_SECRET
     @outbound_messages = []
-    @nexmo_send_in_progress = false
+    @nexmo_lock = new ReadWriteLock
+
+    # Run a one second loop that checks to see if there are messages to be sent
+    # to nexmo. Wait one second after the request is made to avoid
+    # rate throttling issues.
     setInterval(
       () =>
-        if @outbound_messages.length > 0 && @nexmo_send_in_progress == false
-          @nexmo_send_in_progress = true
-          message = @outbound_messages.shift()
-          console.log("Sending #{message.text} to #{message.to}")
-          options =
-            qs:
-              api_key: @key
-              api_secret: @secret
-              country: "US"
-              to: message.to
-              from: message.from
-              text: message.text
-          Request.post("http://rest.nexmo.com/sms/json", options,
-            (error, response, body) =>
-              if (response.error_code isnt "200")
-                console.log("Seems like we got an error with #{message.text}.")
-                console.log(body)
-              else
-                console.log("Confirmed #{message.text} is sent.")
-              @nexmo_send_in_progress = false
+        if @outbound_messages.length > 0
+          @nexmo_lock.writeLock("nexmo", (release)=>
+            message = @outbound_messages.shift()
+            console.log("Sending #{message.text} to #{message.to}")
+            options =
+              qs:
+                api_key: @key
+                api_secret: @secret
+                country: "US"
+                to: message.to
+                from: message.from
+                text: message.text
+            Request.post("http://rest.nexmo.com/sms/json", options,
+              (error, response, body) =>
+                @nexmo_send_in_progress = false
             )
-      ,1000)
-
+            # Release the semaphore so that somebody else can take it.
+            release()
+          )
+      ,1000) # Run this loop ever second (1000 ms)
 
   send_nexmo: (to, from, text) ->
     message =
@@ -61,18 +63,27 @@ class Nexmo extends Adapter
   # inbound messages.
   set_callback: (number, country, callback_path) =>
     console.log("Setting callback to #{number} as #{callback_path}")
-    options =
-      qs:
-        api_key: @key
-        api_secret: @secret
-        country: "US"
-        msisdn: number
-        moHttpUrl: callback_path
-    Request.post("http://rest.nexmo.com/number/update", options,
-      (error, response, body) =>
-        if (response.error_code isnt "200")
-          console.log(body)
+    @nexmo_lock.writeLock("nexmo", (release) =>
+      options =
+        qs:
+          api_key: @key
+          api_secret: @secret
+          country: "US"
+          msisdn: number
+          moHttpUrl: callback_path
+      Request.post("http://rest.nexmo.com/number/update", options,
+        (error, response, body) ->
+          if (response.error_code isnt "200")
+            console.log(body)
+      )
+      # Now that we have sent this out, wait a second so we don't
+      # hit throttling.
+      setTimeout(
+        () ->
+          release();
+        ,1000); # Wait one second! (1000 ms)
     )
+
 
   send: (envelope, strings...) ->
     {user, room} = envelope
@@ -92,7 +103,7 @@ class Nexmo extends Adapter
     self = @
     callback_path = process.env.NEXMO_CALLBACK_PATH or "/nexmo_callback"
     listen_port = process.env.NEXMO_LISTEN_PORT
-    routable_address = process.env.NEXMO_CALLBACK_URL  # including LISTEN_PORT e.g. http://19.19.19.19:8888
+    routable_address = process.env.NEXMO_CALLBACK_URL
 
     callback_url = "#{routable_address}#{callback_path}"
     app = express()
@@ -110,7 +121,7 @@ class Nexmo extends Adapter
         @ee.emit("MsgRx", user_name, message_id, room_name, req.query.text)
       return
 
-    server = app.listen(listen_port, =>
+    server = app.listen(listen_port, ->
       host = server.address().address
       port = server.address().port
       console.log "Nexmo listening locally at http://%s:%s", host, port

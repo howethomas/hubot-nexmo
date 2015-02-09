@@ -35,7 +35,9 @@
     "url": "https://github.com/howethomas/hubot-nexmo/issues",
     "email": "ghostofbasho@gmail.com"
   },
-  "dependencies": {},
+  "dependencies": {
+    "rwlock": "^5.0.0"
+  },
   "devDependencies": {
     "coffee-script": ">=1.2.0"
   },

@@ -5,7 +5,9 @@
 4 verbose node symlink /usr/local/bin/node
 5 info git [ 'status', '--porcelain' ]
 6 verbose stack Error: Git working directory not clean.
+6 verbose stack D npm-debug.log
 6 verbose stack M package.json
+6 verbose stack M src/nexmo.coffee
 6 verbose stack     at /usr/local/lib/node_modules/npm/lib/version.js:92:33
 6 verbose stack     at ChildProcess.exithandler (child_process.js:646:7)
 6 verbose stack     at ChildProcess.emit (events.js:98:17)
@@ -19,7 +21,9 @@
 10 error node v0.10.32
 11 error npm  v2.1.4
 12 error Git working directory not clean.
+12 error D npm-debug.log
 12 error M package.json
+12 error M src/nexmo.coffee
 13 error If you need help, you may report this error at:
 13 error     <http://github.com/npm/npm/issues>
 14 verbose exit [ 1, true ]
