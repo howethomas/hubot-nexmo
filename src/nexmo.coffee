@@ -11,6 +11,10 @@ Request = require('request')
 ReadWriteLock = require('rwlock')
 
 class Nexmo extends Adapter
+  THROTTLE_RATE_MS: 1000
+  NEXMO_SEND_MSG_URL: "http://rest.nexmo.com/sms/json"
+  NEXMO_UPDATE_NUMBER_URL: "http://rest.nexmo.com/number/update"
+
   constructor: (robot) ->
     super(robot)
     @active_numbers = []
@@ -23,74 +27,60 @@ class Nexmo extends Adapter
     )
     @key= process.env.NEXMO_KEY
     @secret= process.env.NEXMO_SECRET
-    @outbound_messages = []
     @nexmo_lock = new ReadWriteLock
+    @last_nexmo_request = Date.now()
 
     # Run a one second loop that checks to see if there are messages to be sent
     # to nexmo. Wait one second after the request is made to avoid
     # rate throttling issues.
-    setInterval(
-      () =>
-        if @outbound_messages.length > 0
-          @nexmo_lock.writeLock("nexmo", (release)=>
-            message = @outbound_messages.shift()
-            console.log("Sending #{message.text} to #{message.to}")
-            options =
-              qs:
-                api_key: @key
-                api_secret: @secret
-                country: "US"
-                to: message.to
-                from: message.from
-                text: message.text
-            Request.post("http://rest.nexmo.com/sms/json", options,
-              (error, response, body) =>
-                @nexmo_send_in_progress = false
-            )
-            # Release the semaphore so that somebody else can take it.
-            release()
-          )
-      ,1000) # Run this loop ever second (1000 ms)
 
-  send_nexmo: (to, from, text) ->
-    message =
-      to: to
-      from: from
-      text: text
-    @outbound_messages.push message
-
-  # Used to call Nexmo to set the call back URL for the
-  # inbound messages.
-  set_callback: (number, country, callback_path) =>
-    console.log("Setting callback to #{number} as #{callback_path}")
-    @nexmo_lock.writeLock("nexmo", (release) =>
-      options =
-        qs:
-          api_key: @key
-          api_secret: @secret
-          country: "US"
-          msisdn: number
-          moHttpUrl: callback_path
-      Request.post("http://rest.nexmo.com/number/update", options,
-        (error, response, body) ->
-          if (response.error_code isnt "200")
-            console.log(body)
-      )
-      # Now that we have sent this out, wait a second so we don't
-      # hit throttling.
-      setTimeout(
-        () ->
-          release();
-        ,1000); # Wait one second! (1000 ms)
+  post_to_nexmo: (url, options, release) =>
+    Request.post(
+      url,
+      options,
+      (error, response, body) =>
+        @last_nexmo_request = Date.now()
+        release() if release?
     )
 
+  throttle_nexmo: (url, options) =>
+    @nexmo_lock.writeLock("nexmo",
+      (release) ->
+        ms_since_last_request = Date.now() - @last_nexmo_request
+        if ms_since_last_request < THROTTLE_RATE_MS
+          delay = THROTTLE_RATE_MS - ms_since_last_request
+          setTimeout(post_to_nexmo(url, options, release), delay)
+        else
+          post_to_nexmo(url, options, null)
+    )
+
+  send_nexmo_message: (to, from, text) ->
+    options =
+      qs:
+        api_key: @key
+        api_secret: @secret
+        country: "US"
+        to: message.to
+        from: message.from
+        text: message.text
+    throttle_nexmo(NEXMO_SEND_MSG_URL, options)
+
+  set_callback: (number, country, callback_path) =>
+    options =
+      qs:
+        api_key: @key
+        api_secret: @secret
+        country: "US"
+        msisdn: number
+        moHttpUrl: callback_path
+    throttle_nexmo(NEXMO_UPDATE_NUMBER_URL, options)
 
   send: (envelope, strings...) ->
     {user, room} = envelope
     user = envelope if not user # pre-2.4.2 style
     from = user.room
     to = user.name
-    @send_nexmo(to, from, string) for string in strings
+    @send_nexmo_message(to, from, string) for string in strings
 
   emote: (envelope, strings...) ->
     @send envelope, "* #{str}" for str in strings
