@@ -9,11 +9,9 @@ Redis = require "redis"
 Os = require("os")
 Request = require('request')
 ReadWriteLock = require('rwlock')
+Us = require('underscore')
 
 class Nexmo extends Adapter
-  THROTTLE_RATE_MS: 1000
-  NEXMO_SEND_MSG_URL: "http://rest.nexmo.com/sms/json"
-  NEXMO_UPDATE_NUMBER_URL: "http://rest.nexmo.com/number/update"
 
   constructor: (robot) ->
     super(robot)
@@ -27,8 +25,10 @@ class Nexmo extends Adapter
     )
     @key= process.env.NEXMO_KEY
     @secret= process.env.NEXMO_SECRET
-    @nexmo_lock = new ReadWriteLock
-    @last_nexmo_request = Date.now()
+    @THROTTLE_RATE_MS = 1000
+    @NEXMO_SEND_MSG_URL = "http://rest.nexmo.com/sms/json"
+    @NEXMO_UPDATE_NUMBER_URL = "http://rest.nexmo.com/number/update"
+    @throttled_nexmo = Us.throttle(@post_to_nexmo, @THROTTLE_RATE_MS)
 
     # Run a one second loop that checks to see if there are messages to be sent
     # to nexmo. Wait one second after the request is made to avoid
@@ -43,17 +43,6 @@ class Nexmo extends Adapter
         release() if release?
     )
 
-  throttle_nexmo: (url, options) =>
-    @nexmo_lock.writeLock("nexmo",
-      (release) =>
-        ms_since_last_request = Date.now() - @last_nexmo_request
-        if ms_since_last_request < Nexmo.THROTTLE_RATE_MS
-          delay = Nexmo.THROTTLE_RATE_MS - ms_since_last_request
-          setTimeout(post_to_nexmo(url, options, release), delay)
-        else
-          @post_to_nexmo(url, options, null)
-    )
-
   send_nexmo_message: (to, from, text) ->
     options =
       qs:
@@ -63,7 +52,7 @@ class Nexmo extends Adapter
         to: message.to
         from: message.from
         text: message.text
-    @throttle_nexmo(Nexmo.NEXMO_SEND_MSG_URL, options)
+    @throttled_nexmo(@NEXMO_SEND_MSG_URL, options)
 
   set_callback: (number, country, callback_path) =>
     options =
@@ -73,7 +62,7 @@ class Nexmo extends Adapter
         country: "US"
         msisdn: number
         moHttpUrl: callback_path
-    @throttle_nexmo(Nexmo.NEXMO_UPDATE_NUMBER_URL, options)
+    @throttled_nexmo(@NEXMO_UPDATE_NUMBER_URL, options)
 
   send: (envelope, strings...) ->
     {user, room} = envelope

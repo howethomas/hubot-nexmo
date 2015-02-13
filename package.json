@@ -36,7 +36,8 @@
     "email": "ghostofbasho@gmail.com"
   },
   "dependencies": {
-    "rwlock": "^5.0.0"
+    "rwlock": "^5.0.0",
+    "underscore": "^1.7.0"
   },
   "devDependencies": {
     "coffee-script": ">=1.2.0"
