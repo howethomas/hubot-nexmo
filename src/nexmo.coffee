@@ -49,9 +49,9 @@ class Nexmo extends Adapter
         api_key: @key
         api_secret: @secret
         country: "US"
-        to: message.to
-        from: message.from
-        text: message.text
+        to: to
+        from: from
+        text: text
     @throttled_nexmo(@NEXMO_SEND_MSG_URL, options)
 
   set_callback: (number, country, callback_path) =>
