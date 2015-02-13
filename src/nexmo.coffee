@@ -45,13 +45,13 @@ class Nexmo extends Adapter
 
   throttle_nexmo: (url, options) =>
     @nexmo_lock.writeLock("nexmo",
-      (release) ->
+      (release) =>
         ms_since_last_request = Date.now() - @last_nexmo_request
-        if ms_since_last_request < THROTTLE_RATE_MS
-          delay = THROTTLE_RATE_MS - ms_since_last_request
+        if ms_since_last_request < Nexmo.THROTTLE_RATE_MS
+          delay = Nexmo.THROTTLE_RATE_MS - ms_since_last_request
           setTimeout(post_to_nexmo(url, options, release), delay)
         else
-          post_to_nexmo(url, options, null)
+          @post_to_nexmo(url, options, null)
     )
 
   send_nexmo_message: (to, from, text) ->
@@ -63,7 +63,7 @@ class Nexmo extends Adapter
         to: message.to
         from: message.from
         text: message.text
-    throttle_nexmo(NEXMO_SEND_MSG_URL, options)
+    @throttle_nexmo(Nexmo.NEXMO_SEND_MSG_URL, options)
 
   set_callback: (number, country, callback_path) =>
     options =
@@ -73,7 +73,7 @@ class Nexmo extends Adapter
         country: "US"
         msisdn: number
         moHttpUrl: callback_path
-    throttle_nexmo(NEXMO_UPDATE_NUMBER_URL, options)
+    @throttle_nexmo(Nexmo.NEXMO_UPDATE_NUMBER_URL, options)
 
   send: (envelope, strings...) ->
     {user, room} = envelope
