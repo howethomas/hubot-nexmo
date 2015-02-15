@@ -33,8 +33,7 @@ class Nexmo extends Adapter
 
 
   report: (log_string) ->
-    now = new Date(Date.now())
-    console.log("#{now.toISOString()}:#{log_string}")
+    @robot.emit("log", log_string)
 
   drain_nexmo: () =>
     request = @pending_nexmo_requests.shift()
@@ -44,11 +43,11 @@ class Nexmo extends Adapter
         request.url,
         request.options,
         (error, response, body) =>
-          status_message = "Call to #{request.url}"
+          status_message = "Call to #{request.url} #{request.options.qs.msisdn}"
           if !error and response.statusCode == 200
             @report  status_message + " was successful."
           else
-            @report  status_message + " failed with #{Util.inspect(error, false, null)}"
+            @report  status_message + " failed with #{response.statusCode}:#{response.statusMessage}"
       )
 
   post_to_nexmo: (url, options) =>
