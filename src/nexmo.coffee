@@ -22,7 +22,7 @@ class Nexmo extends Adapter
     @robot = robot
     @key= process.env.NEXMO_KEY
     @secret= process.env.NEXMO_SECRET
-    @THROTTLE_RATE_MS = 1000
+    @THROTTLE_RATE_MS = 1500
     @NEXMO_SEND_MSG_URL = "http://rest.nexmo.com/sms/json"
     @NEXMO_UPDATE_NUMBER_URL = "http://rest.nexmo.com/number/update"
 
